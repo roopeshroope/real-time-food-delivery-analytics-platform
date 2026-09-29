@@ -1,0 +1,8 @@
+PyYAML>=6.0
+kafka-python>=2.0.2
+python-dotenv>=1.0.0   # optional: auto-loads .env for Confluent Cloud credentials
+
+# --- Bronze layer (Databricks + Spark Structured Streaming + Delta Lake) ---
+pyspark>=3.5.0,<3.6.0
+delta-spark>=3.1.0      # local/dev SparkSession only -- Databricks clusters already have Delta built in
+pytest>=8.0.0           # tests/test_bronze_transform.py

@@ -1,0 +1,50 @@
+# ==============================================================================
+# Databricks Asset Bundle definition for the Bronze ingestion pipeline.
+# The event simulator itself is NOT part of this bundle -- it runs wherever
+# you produce events from (locally, a VM, CI); this bundle only deploys the
+# Databricks-side consumer.
+#
+# Deploy:   databricks bundle deploy --target dev
+# Run once: databricks bundle run bronze_ingestion --target dev
+# ==============================================================================
+bundle:
+  name: food_delivery_bronze
+
+include:
+  - resources/*.yml
+
+variables:
+  bronze_catalog:
+    description: "Unity Catalog catalog for Bronze tables"
+    default: "food_delivery_dev"
+  bronze_storage_root:
+    description: "ADLS Gen2 path for Bronze Delta table data"
+    default: "abfss://lakehouse@fooddeliverydevdl.dfs.core.windows.net/bronze"
+  bronze_checkpoint_root:
+    description: "ADLS Gen2 path for Structured Streaming checkpoints"
+    default: "abfss://lakehouse@fooddeliverydevdl.dfs.core.windows.net/_checkpoints/bronze"
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: "https://<your-workspace>.azuredatabricks.net"
+
+  staging:
+    mode: production
+    variables:
+      bronze_catalog: "food_delivery_staging"
+      bronze_storage_root: "abfss://lakehouse@fooddeliverystagingdl.dfs.core.windows.net/bronze"
+      bronze_checkpoint_root: "abfss://lakehouse@fooddeliverystagingdl.dfs.core.windows.net/_checkpoints/bronze"
+    workspace:
+      host: "https://<your-workspace>.azuredatabricks.net"
+
+  prod:
+    mode: production
+    variables:
+      bronze_catalog: "food_delivery"
+      bronze_storage_root: "abfss://lakehouse@fooddeliverydl.dfs.core.windows.net/bronze"
+      bronze_checkpoint_root: "abfss://lakehouse@fooddeliverydl.dfs.core.windows.net/_checkpoints/bronze"
+    workspace:
+      host: "https://<your-workspace>.azuredatabricks.net"

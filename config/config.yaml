@@ -1,0 +1,109 @@
+# ==============================================================================
+# Hyperlocal Food-Delivery Event Simulator — Configuration
+# ==============================================================================
+
+output:
+  # mode: "kafka" | "console" | "file"
+  # console/file modes let you smoke-test the simulator without a running broker
+  mode: "kafka"
+  file_dir: "./output_events"          # used when mode == "file"
+
+kafka:
+  # Local Kafka:      bootstrap_servers: "localhost:9092", security_protocol: "PLAINTEXT"
+  # Confluent Cloud:  bootstrap_servers: "<cluster>.<region>.<cloud>.confluent.cloud:9092"
+  #                   security_protocol: "SASL_SSL", sasl_mechanism: "PLAIN"
+  # ${VAR} below is expanded from the environment at load time (see .env.example) --
+  # never commit real credentials into this file.
+  bootstrap_servers: "${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}"
+  topics:
+    order_lifecycle: "order-lifecycle-events"
+    dp_status: "dp-status-events"
+    gps_pings: "gps-pings"
+    restaurant_status: "restaurant-status-events"
+    payment: "payment-events"
+    dispatch_decision: "dispatch-decision-events"
+  # partition key field used per topic (also documented in README)
+  acks: "all"
+  linger_ms: 20
+  retries: 5
+  compression_type: "gzip"
+
+  # --- Confluent Cloud / any SASL_SSL-secured cluster ---
+  # Leave security_protocol as PLAINTEXT for a local docker-compose broker.
+  security_protocol: "${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}"   # PLAINTEXT | SASL_SSL
+  sasl_mechanism: "${KAFKA_SASL_MECHANISM:-}"                  # PLAIN for Confluent Cloud API keys
+  sasl_plain_username: "${KAFKA_API_KEY:-}"                    # Confluent Cloud API key
+  sasl_plain_password: "${KAFKA_API_SECRET:-}"                 # Confluent Cloud API secret
+  # request timeouts widen a bit for the extra network hop to a managed cloud cluster
+  request_timeout_ms: 30000
+  api_version_auto_timeout_ms: 15000
+
+simulation:
+  # 1 simulated minute = 1 real second at speed_factor=60. Higher = faster/compressed.
+  speed_factor: 30
+  duration_minutes: 240          # wall-clock-equivalent simulated minutes to run (4 simulated hours)
+  random_seed: 42                # set to null for non-deterministic runs
+  start_sim_hour: 10.0           # simulated clock starts at 10:00 local time
+
+scale:
+  num_zones: 6
+  num_customers: 2000
+  num_restaurants: 150
+  num_delivery_partners: 300
+
+demand:
+  base_orders_per_min: 4.0       # base city-wide Poisson arrival rate at off-peak
+  peak_windows:                   # hour ranges (24h, float) and demand multipliers
+    - { start: 12.0, end: 14.5, multiplier: 2.8, label: "lunch" }
+    - { start: 19.0, end: 22.5, multiplier: 3.2, label: "dinner" }
+  off_peak_multiplier: 1.0
+  zone_demand_skew: true          # if true, zones have unequal baseline popularity
+
+supply:
+  base_dp_online_ratio: 0.55      # fraction of registered DPs online at off-peak
+  peak_dp_online_ratio: 0.80      # fraction online during peaks (still capped -> shortage)
+  shortage_probability: 0.15      # chance any given peak interval has an additional supply dip
+  shortage_multiplier: 0.6        # multiplies online ratio further during a shortage event
+  dp_speed_kmph_range: [14, 32]   # realistic 2-wheeler urban delivery speed range
+  traffic_slowdown_probability: 0.12
+  traffic_slowdown_factor: 0.4    # speed multiplier while "in traffic"
+
+restaurant:
+  avg_prep_minutes_range: [8, 22]
+  prep_variance_minutes: 4
+  accept_sla_seconds: 90
+  reject_probability: 0.04
+  no_response_probability: 0.02   # restaurant silently fails to act -> auto system handling
+  capacity_orders_range: [3, 10]  # concurrent "preparing" orders before flagged busy
+  offline_probability_per_hour: 0.01
+
+order:
+  cancel_before_accept_probability: 0.03
+  cancel_after_accept_probability: 0.015
+  cancel_after_ready_probability: 0.004
+  items_per_order_range: [1, 6]
+  avg_item_price_inr: 180
+
+payment:
+  base_failure_rate: 0.045
+  gateway_outage_probability_per_hour: 0.02
+  gateway_outage_failure_rate: 0.35
+  gateway_outage_duration_minutes_range: [3, 12]
+  max_retries: 3
+  retry_backoff_seconds_range: [2, 8]
+
+dispatch:
+  batching_enabled: true
+  batching_max_detour_km: 1.5
+  batching_probability_when_eligible: 0.35
+  candidate_pool_size: 8
+  gps_ping_interval_seconds: 4    # simulated seconds between GPS pings per active DP
+
+chaos:
+  duplicate_event_probability: 0.01
+  late_event_probability: 0.03
+  late_event_delay_seconds_range: [3, 25]
+  out_of_order_reorder_window: 4  # small buffer size used to intentionally shuffle emission order
+  gps_dropout_probability: 0.02   # probability a DP's ping stream has a gap (missed pings)
+  gps_dropout_pings: [2, 5]       # how many pings get skipped during a dropout
+  gps_anomaly_probability: 0.004  # probability of injecting a synthetic GPS anomaly per active trip

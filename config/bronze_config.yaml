@@ -1,0 +1,68 @@
+# ==============================================================================
+# Bronze layer configuration.
+#
+# Kafka CONNECTION details (bootstrap servers, SASL/SSL, API key/secret) are
+# NOT duplicated here -- bronze/config.py loads them straight from this same
+# repo's config/config.yaml (simulator.config.AppConfig), which already has
+# the ${VAR:-default} env-var wiring for local Kafka vs Confluent Cloud.
+# This file only adds what's specific to the Bronze pipeline: where each
+# topic's Bronze table lives and how each stream is tuned.
+#
+# topic_key below must match a key under `kafka.topics` in config/config.yaml.
+# ==============================================================================
+
+catalog: "${BRONZE_CATALOG:-food_delivery}"      # Unity Catalog catalog
+bronze_schema: "${BRONZE_SCHEMA:-bronze}"        # -> <catalog>.<bronze_schema>.<table>
+
+# Root paths (ADLS Gen2). For local/dev runs against a Spark session with no
+# Unity Catalog, run_bronze_stream.py falls back to a local ./bronze_lake
+# directory automatically when you pass --local-fallback -- see
+# bronze/config.py:resolve_local_fallback().
+storage_root: "${BRONZE_STORAGE_ROOT:-abfss://lakehouse@fooddeliverydl.dfs.core.windows.net/bronze}"
+checkpoint_root: "${BRONZE_CHECKPOINT_ROOT:-abfss://lakehouse@fooddeliverydl.dfs.core.windows.net/_checkpoints/bronze}"
+
+# Shared quarantine table for records that fail JSON parsing, across all topics.
+malformed_table: "malformed_events"
+
+topics:
+  order_lifecycle:
+    bronze_table: "order_lifecycle_events"
+    schema_ref: "order_lifecycle"          # -> bronze/schemas.py SCHEMAS["order_lifecycle"]
+    trigger_seconds: 10
+    starting_offsets: "earliest"           # first run only; checkpoint wins after that
+    max_offsets_per_trigger: 20000
+
+  dp_status:
+    bronze_table: "dp_status_events"
+    schema_ref: "dp_status"
+    trigger_seconds: 10
+    starting_offsets: "earliest"
+    max_offsets_per_trigger: 20000
+
+  gps_pings:
+    bronze_table: "gps_pings"
+    schema_ref: "gps_pings"
+    trigger_seconds: 5                     # highest-volume topic, tighter trigger
+    starting_offsets: "earliest"
+    max_offsets_per_trigger: 100000
+
+  restaurant_status:
+    bronze_table: "restaurant_status_events"
+    schema_ref: "restaurant_status"
+    trigger_seconds: 15                    # heartbeat-driven, low volume
+    starting_offsets: "earliest"
+    max_offsets_per_trigger: 10000
+
+  payment:
+    bronze_table: "payment_events"
+    schema_ref: "payment"
+    trigger_seconds: 10
+    starting_offsets: "earliest"
+    max_offsets_per_trigger: 20000
+
+  dispatch_decision:
+    bronze_table: "dispatch_decision_events"
+    schema_ref: "dispatch_decision"
+    trigger_seconds: 10
+    starting_offsets: "earliest"
+    max_offsets_per_trigger: 10000

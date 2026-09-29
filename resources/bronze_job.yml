@@ -1,0 +1,86 @@
+# ==============================================================================
+# Bronze ingestion job.
+#
+# Design choice: ONE job with SIX independent tasks (no depends_on between
+# them) rather than six separate jobs. Each task is its own long-running
+# Structured Streaming query with its own checkpoint, so they don't
+# interfere functionally -- but because Databricks' "continuous" trigger
+# operates at the JOB level, a crash in any one task currently restarts the
+# whole job (all six tasks resume together, harmlessly, from their own
+# checkpoints since every write is idempotent). If you later want a crash
+# in gps_pings to NOT bounce the other five topics, split this into six
+# separate job resources, one per topic -- same task block, just promoted
+# to its own top-level job with its own `continuous:` block. Left as one
+# job here for simplicity; see README "Production considerations".
+# ==============================================================================
+resources:
+  jobs:
+    bronze_ingestion:
+      name: "bronze-ingestion-${bundle.target}"
+
+      job_clusters:
+        - job_cluster_key: bronze_cluster
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "Standard_DS3_v2"
+            num_workers: 2
+            data_security_mode: "SINGLE_USER"   # required for Unity Catalog table access
+            spark_env_vars:
+              # Databricks resolves {{secrets/scope/key}} into real env var
+              # values at cluster start -- simulator.config.AppConfig then
+              # reads these exactly like it does from a local .env file, so
+              # bronze/kafka_reader.py needs zero Databricks-specific code.
+              KAFKA_BOOTSTRAP_SERVERS: "{{secrets/food-delivery/kafka_bootstrap_servers}}"
+              KAFKA_SECURITY_PROTOCOL: "{{secrets/food-delivery/kafka_security_protocol}}"
+              KAFKA_SASL_MECHANISM: "{{secrets/food-delivery/kafka_sasl_mechanism}}"
+              KAFKA_API_KEY: "{{secrets/food-delivery/kafka_api_key}}"
+              KAFKA_API_SECRET: "{{secrets/food-delivery/kafka_api_secret}}"
+              BRONZE_CATALOG: "${var.bronze_catalog}"
+              BRONZE_STORAGE_ROOT: "${var.bronze_storage_root}"
+              BRONZE_CHECKPOINT_ROOT: "${var.bronze_checkpoint_root}"
+
+      tasks:
+        - task_key: bronze_order_lifecycle
+          job_cluster_key: bronze_cluster
+          spark_python_task:
+            python_file: ../bronze/run_bronze_stream.py
+            parameters: ["--topic-key", "order_lifecycle"]
+
+        - task_key: bronze_dp_status
+          job_cluster_key: bronze_cluster
+          spark_python_task:
+            python_file: ../bronze/run_bronze_stream.py
+            parameters: ["--topic-key", "dp_status"]
+
+        - task_key: bronze_gps_pings
+          job_cluster_key: bronze_cluster
+          spark_python_task:
+            python_file: ../bronze/run_bronze_stream.py
+            parameters: ["--topic-key", "gps_pings"]
+
+        - task_key: bronze_restaurant_status
+          job_cluster_key: bronze_cluster
+          spark_python_task:
+            python_file: ../bronze/run_bronze_stream.py
+            parameters: ["--topic-key", "restaurant_status"]
+
+        - task_key: bronze_payment
+          job_cluster_key: bronze_cluster
+          spark_python_task:
+            python_file: ../bronze/run_bronze_stream.py
+            parameters: ["--topic-key", "payment"]
+
+        - task_key: bronze_dispatch_decision
+          job_cluster_key: bronze_cluster
+          spark_python_task:
+            python_file: ../bronze/run_bronze_stream.py
+            parameters: ["--topic-key", "dispatch_decision"]
+
+      # Continuous trigger: Databricks Jobs' native pattern for long-running
+      # Structured Streaming workloads -- if the run ever terminates
+      # (cluster preemption, an uncaught exception), Jobs restarts it
+      # automatically. Each task resumes from its own Structured Streaming
+      # checkpoint, so a restart never reprocesses or loses data.
+      continuous:
+        pause_status: "UNPAUSED"
+      max_concurrent_runs: 1
